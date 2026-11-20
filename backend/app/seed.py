@@ -85,13 +85,43 @@ CREATE TABLE IF NOT EXISTS reopen_requests (
   dock_day TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'none'
 );
+CREATE TABLE IF NOT EXISTS supplier_holds (
+  supplier_code TEXT PRIMARY KEY,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  released_at TEXT
+);
+CREATE TABLE IF NOT EXISTS hold_audit (
+  id INTEGER PRIMARY KEY,
+  supplier_code TEXT NOT NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
+  actor TEXT,
+  created_at TEXT NOT NULL
+);
 '''
+
+# Columns added after the initial schema; applied idempotently so existing DBs migrate.
+_ADDED_COLUMNS = {
+    "reconcile_batches": [
+        ("held_supplier_count", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+}
+
+
+def _migrate(conn) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, decl in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def seed_if_empty() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         if conn.execute("SELECT COUNT(*) c FROM suppliers").fetchone()["c"]:
             return
         conn.execute("INSERT INTO settings(key, value) VALUES ('dock_day', ?)", ("2026-11-18",))

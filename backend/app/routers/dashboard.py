@@ -2,6 +2,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from app.db import connect
 from app.services.gate import is_sealed
+from app.services.hold_service import list_holds
 
 router = APIRouter(tags=["dashboard"])
 
@@ -24,6 +25,7 @@ def dashboard():
                 "SELECT COUNT(*) c FROM variance_rows WHERE batch_id=? AND fate='pending'",
                 (batch["id"],),
             ).fetchone()["c"]
+        active_holds = list_holds(conn, active_only=True)
         return {
             "dock_day": day,
             "sealed": is_sealed(conn, day),
@@ -32,6 +34,8 @@ def dashboard():
             "confirm_count": confirm_n,
             "latest_batch": dict(batch) if batch else None,
             "pending_variance": pending,
+            "held_supplier_count": len(active_holds),
+            "held_suppliers": active_holds,
         }
     finally:
         conn.close()

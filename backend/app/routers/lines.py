@@ -68,7 +68,7 @@ def list_expects(dock_day: str | None = None):
 def add_expect(body: ExpectIn):
     conn = connect()
     try:
-        assert_writable(conn, body.dock_day)
+        assert_writable(conn, body.dock_day, body.supplier_code)
         conn.execute(
             '''INSERT INTO expect_lines(doc_no, supplier_code, sku, dock_day, qty, note, created_at)
                VALUES (?,?,?,?,?,?,?)''',
@@ -103,7 +103,7 @@ def list_receives(dock_day: str | None = None):
 def add_receive(body: ReceiveIn):
     conn = connect()
     try:
-        assert_writable(conn, body.dock_day)
+        assert_writable(conn, body.dock_day, body.supplier_code)
         occurred = body.occurred_at or _now()
         conn.execute(
             '''INSERT INTO receive_lines(receive_no, supplier_code, sku, dock_day, qty, occurred_at, note, created_at)
@@ -148,7 +148,7 @@ def list_confirms(dock_day: str | None = None):
 def add_confirm(body: ConfirmIn):
     conn = connect()
     try:
-        assert_writable(conn, body.dock_day)
+        assert_writable(conn, body.dock_day, body.supplier_code)
         conn.execute(
             '''INSERT INTO confirm_lines(confirm_no, supplier_code, sku, dock_day, qty, note, created_at)
                VALUES (?,?,?,?,?,?,?)''',

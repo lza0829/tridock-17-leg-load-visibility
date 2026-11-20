@@ -1,7 +1,8 @@
 from __future__ import annotations
-from collections import defaultdict
 from datetime import datetime, timezone
 import sqlite3
+
+from app.services.hold_service import active_hold_codes
 
 
 def _now() -> str:
@@ -37,14 +38,21 @@ def run_reconcile(conn: sqlite3.Connection, dock_day: str) -> dict:
     expect_m = _sum_map(conn, "expect_lines", dock_day)
     receive_m = _sum_map(conn, "receive_lines", dock_day)
     confirm_m = _sum_map(conn, "confirm_lines", dock_day)
-    keys = set(expect_m) | set(receive_m) | set(confirm_m)
+    all_keys = set(expect_m) | set(receive_m) | set(confirm_m)
+
+    # Architecture A: held suppliers are filtered OUT of the alignment entirely.
+    # Their keys never enter match_rows/variance_rows, so they cannot block sealing
+    # and cannot be baked into a sealed snapshot while the hold is active.
+    held = active_hold_codes(conn)
+    keys = {k for k in all_keys if k[0] not in held}
+    held_supplier_count = len({sup for (sup, _sku) in all_keys if sup in held})
 
     n = conn.execute("SELECT COUNT(*) c FROM reconcile_batches").fetchone()["c"] + 1
     batch_no = f"RB-{dock_day.replace('-', '')}-{n:03d}"
     cur = conn.execute(
-        '''INSERT INTO reconcile_batches(batch_no, dock_day, matched_count, variance_count, status, sealed_at, note)
-           VALUES (?,?,0,0,'open',NULL,?)''',
-        (batch_no, dock_day, "三联对齐"),
+        '''INSERT INTO reconcile_batches(batch_no, dock_day, matched_count, variance_count, status, sealed_at, note, held_supplier_count)
+           VALUES (?,?,0,0,'open',NULL,?,?)''',
+        (batch_no, dock_day, "三联对齐", held_supplier_count),
     )
     batch_id = int(cur.lastrowid)
 
@@ -82,6 +90,7 @@ def run_reconcile(conn: sqlite3.Connection, dock_day: str) -> dict:
         "dock_day": dock_day,
         "matched_count": matched,
         "variance_count": variance,
+        "held_supplier_count": held_supplier_count,
         "status": "open",
     }
 
@@ -99,10 +108,33 @@ def seal_day(conn: sqlite3.Connection, dock_day: str) -> dict:
     ).fetchone()["c"]
     if pending:
         raise ValueError(f"仍有 {pending} 条差额未处置，不能结案")
+
+    # Take the write lock up front so a concurrent place/release hold cannot interleave
+    # between our check and the status flip. Held set and the sealed snapshot are read
+    # under the same lock within this one transaction.
+    conn.execute("BEGIN IMMEDIATE")
+    held = active_hold_codes(conn)
+    batch_suppliers = {
+        r["supplier_code"]
+        for r in conn.execute(
+            "SELECT DISTINCT supplier_code FROM match_rows WHERE batch_id=?",
+            (batch["id"],),
+        ).fetchall()
+    }
+    dirty = sorted(batch_suppliers & held)
+    if dirty:
+        conn.rollback()
+        raise ValueError(
+            f"批次含暂扣供应商键（{', '.join(dirty)}），解除 hold 并重跑对账后才能结案封印"
+        )
     now = _now()
     conn.execute(
         "UPDATE reconcile_batches SET status='sealed', sealed_at=? WHERE id=?",
         (now, batch["id"]),
+    )
+    conn.execute(
+        "INSERT INTO hold_audit(supplier_code, action, reason, actor, created_at) VALUES (?,?,?,?,?)",
+        ("*", "seal", f"dock_day={dock_day} batch={batch['batch_no']}", "system", now),
     )
     conn.commit()
     return dict(conn.execute("SELECT * FROM reconcile_batches WHERE id=?", (batch["id"],)).fetchone())

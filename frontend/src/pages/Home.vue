@@ -12,9 +12,25 @@
       <div class="stat"><div class="k">预报 / 实收 / 回执</div><div class="v">{{ d.expect_count }} / {{ d.receive_count }} / {{ d.confirm_count }}</div></div>
       <div class="stat"><div class="k">未决差额</div><div class="v">{{ d.pending_variance }}</div></div>
       <div class="stat">
+        <div class="k">暂扣供应商</div>
+        <div class="v"><span class="tag" :class="d.held_supplier_count ? 'bad' : 'ok'">{{ d.held_supplier_count }}</span></div>
+      </div>
+      <div class="stat">
         <div class="k">结案</div>
         <div class="v"><span class="tag" :class="d.sealed ? 'seal' : 'bad'">{{ d.sealed ? '已结案' : '未结案' }}</span></div>
       </div>
+    </div>
+    <div class="panel" v-if="d.held_suppliers && d.held_suppliers.length">
+      <h2>暂扣中供应商</h2>
+      <table>
+        <thead><tr><th>供应商</th><th>原因</th><th>暂扣时间</th></tr></thead>
+        <tbody>
+          <tr v-for="h in d.held_suppliers" :key="h.supplier_code">
+            <td>{{ h.supplier_code }}</td><td>{{ h.reason }}</td><td>{{ h.created_at }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="msg">暂扣期间该供应商三腿装载由后端拒绝，对齐自动剔除，含其键的批次无法封印。</p>
     </div>
     <div class="panel" v-if="d && d.latest_batch">
       <h2>最近对账批次</h2>

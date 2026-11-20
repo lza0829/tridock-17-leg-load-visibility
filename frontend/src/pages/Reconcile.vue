@@ -15,7 +15,8 @@
       </div>
       <p class="msg">{{ err }}</p>
       <p class="okmsg">{{ ok }}</p>
-      <p v-if="batch">批次 {{ batch.batch_no }} · 对齐 {{ batch.matched_count }} · 差额 {{ batch.variance_count }} · {{ batch.status }}</p>
+      <p v-if="batch">批次 {{ batch.batch_no }} · 对齐 {{ batch.matched_count }} · 差额 {{ batch.variance_count }} · 暂扣剔除 {{ batch.held_supplier_count || 0 }} 家 · {{ batch.status }}</p>
+      <p class="msg" v-if="batch && batch.held_supplier_count">本批次已剔除暂扣供应商，其键不进对齐行；解除暂扣后重跑对账方可纳入并封印。</p>
     </div>
     <div class="panel">
       <h2>对齐行</h2>
